@@ -255,10 +255,47 @@ if not concurrency_levels:
     concurrency_levels = [_min]
 
 
+# ── Connectivity pre-flight checks ────────────────────────────────────────────
+def check_grpc_reachable(host: str, port: int) -> str | None:
+    """Return None if reachable, error string otherwise."""
+    import socket
+    try:
+        with socket.create_connection((host, port), timeout=3):
+            return None
+    except Exception as e:
+        return f"Cannot reach {host}:{port} — {e}"
+
+
+def check_http_reachable(url: str) -> str | None:
+    """Return None if reachable, error string otherwise."""
+    import urllib.request
+    import urllib.error
+    health_url = url.rstrip("/").removesuffix("/v1") + "/v1/models"
+    try:
+        urllib.request.urlopen(health_url, timeout=3)
+        return None
+    except urllib.error.HTTPError:
+        return None  # server responded (even 4xx means it's up)
+    except Exception as e:
+        return f"Cannot reach {url} — {e}"
+
+
 # ── Benchmark thread ──────────────────────────────────────────────────────────
 def run_benchmark_thread(pipeline_k: str, params: dict, progress_q: queue.Queue):
     def cb(msg: str):
         progress_q.put(("progress", msg))
+
+    # Pre-flight: verify backend is reachable before running
+    if pipeline_k in ("asr", "tts"):
+        err = check_grpc_reachable(params["host"], params["port"])
+        if err:
+            progress_q.put(("error", f"Backend not reachable: {err}\n\nStart the NIM container first:\n  bash docker/{pipeline_k}/run.sh"))
+            return
+    elif pipeline_k == "llm":
+        err = check_http_reachable(params["base_url"])
+        if err:
+            progress_q.put(("error", f"Backend not reachable: {err}\n\nStart the NIM container first:\n  bash docker/llm/run.sh"))
+            return
 
     try:
         if pipeline_k == "asr":
@@ -422,7 +459,7 @@ with tab_run:
         st.text_area("Progress Log", value=log_text, height=250, key="progress_display")
 
     if st.session_state.run_error:
-        st.error(f"Benchmark failed: {st.session_state.run_error}")
+        st.error(f"Benchmark failed:\n\n{st.session_state.run_error}")
 
     if st.session_state.current_results and not st.session_state.is_running:
         res = st.session_state.current_results
