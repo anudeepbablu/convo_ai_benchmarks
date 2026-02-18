@@ -1,0 +1,22 @@
+asr:
+  host: localhost
+  port: 50051
+  use_ssl: false
+
+tts:
+  host: localhost
+  port: 50052
+  use_ssl: false
+
+llm:
+  base_url: "http://localhost:8000/v1"
+  model: "meta/llama-3.1-8b-instruct"
+  api_key: "not-required"  # NIM does not require API key by default
+
+benchmark:
+  gpu_monitor_interval_sec: 1.0
+  results_dir: "results"
+  default_concurrency_min: 1
+  default_concurrency_max: 50
+  default_concurrency_step: 5
+  default_requests_per_level: 50
