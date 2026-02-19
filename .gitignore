@@ -24,8 +24,8 @@ build/
 # Jupyter
 .ipynb_checkpoints/
 
-# Benchmark results (auto-generated per run)
-results/
+# Benchmark results — ignore raw JSON, keep markdown reports
+results/*.json
 
 # OS
 .DS_Store
