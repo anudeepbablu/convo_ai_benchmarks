@@ -1,4 +1,12 @@
-"""ASR benchmark against Nvidia Riva Parakeet 1.1B NIM via gRPC."""
+"""ASR benchmark against Nvidia Riva NIM using the official nvidia-riva-client library.
+
+Supports two modes matching NVIDIA's recommended methodology:
+  - streaming: AudioChunkFileIterator + streaming_response_generator (matches riva_streaming_asr_client)
+  - offline:   offline_recognize with full audio (matches riva_asr_client)
+
+References:
+  https://docs.nvidia.com/deeplearning/riva/user-guide/docs/asr/asr-performance.html
+"""
 
 from __future__ import annotations
 
@@ -16,8 +24,8 @@ import yaml
 from benchmarks.metrics import (
     ConcurrencyResult,
     compute_latency_stats,
-    compute_rtf,
     compute_wer_score,
+    percentile,
 )
 from benchmarks.gpu_monitor import GpuMonitor
 
@@ -25,11 +33,18 @@ logger = logging.getLogger(__name__)
 
 try:
     import riva.client as riva_client
+    from riva.client import (
+        ASRService,
+        AudioChunkFileIterator,
+        AudioEncoding,
+        Auth,
+        RecognitionConfig,
+        StreamingRecognitionConfig,
+    )
     _RIVA_AVAILABLE = True
 except ImportError:
     _RIVA_AVAILABLE = False
     logger.warning("nvidia-riva-client not installed; ASR benchmark unavailable.")
-
 
 CONFIG_PATH = Path(__file__).parent.parent / "config" / "endpoints.yaml"
 
@@ -37,17 +52,6 @@ CONFIG_PATH = Path(__file__).parent.parent / "config" / "endpoints.yaml"
 def load_config() -> dict:
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
-
-
-@dataclass
-class AsrRequestResult:
-    audio_file: str
-    audio_duration_sec: float
-    latency_sec: float
-    transcript: str
-    reference: str
-    success: bool
-    error: str = ""
 
 
 def get_audio_duration(path: str) -> float:
@@ -73,24 +77,163 @@ def load_audio_samples(audio_dir: Path, transcripts: dict[str, str], n: int = 10
     return samples
 
 
-def _transcribe_one(
+# ── Streaming mode (matches riva_streaming_asr_client) ───────────────────────
+
+@dataclass
+class StreamingRequestResult:
+    audio_file: str
+    audio_duration_sec: float
+    total_latency_sec: float
+    audio_streaming_sec: float        # time spent sending chunks (includes real-time pacing sleeps)
+    server_compute_after_audio_sec: float  # time from last chunk sent to final result
+    time_to_first_response_sec: float
+    final_latency_sec: float
+    transcript: str
+    reference: str
+    success: bool
+    error: str = ""
+
+
+def _streaming_recognize_one(
     audio_path: str,
     reference: str,
     audio_duration: float,
-    host: str,
-    port: int,
-    use_ssl: bool,
-) -> AsrRequestResult:
-    """Transcribe a single audio file using Riva ASR gRPC."""
+    auth: Auth,
+    chunk_duration_ms: float,
+    simulate_realtime: bool,
+) -> StreamingRequestResult:
+    """Stream one audio file in chunks, matching riva_streaming_asr_client behavior."""
     if not _RIVA_AVAILABLE:
-        return AsrRequestResult(
+        return StreamingRequestResult(
+            audio_file=audio_path, audio_duration_sec=audio_duration,
+            total_latency_sec=0, audio_streaming_sec=0,
+            server_compute_after_audio_sec=0,
+            time_to_first_response_sec=0, final_latency_sec=0,
+            transcript="", reference=reference, success=False,
+            error="nvidia-riva-client not installed",
+        )
+    try:
+        asr = ASRService(auth)
+
+        # Read sample rate from file
+        try:
+            with sf.SoundFile(audio_path) as sf_file:
+                sample_rate = sf_file.samplerate
+        except Exception:
+            sample_rate = 16000
+
+        config = RecognitionConfig(
+            encoding=AudioEncoding.LINEAR_PCM,
+            language_code="en-US",
+            max_alternatives=1,
+            enable_automatic_punctuation=True,
+            enable_word_time_offsets=False,
+            sample_rate_hertz=sample_rate,
+        )
+        streaming_config = StreamingRecognitionConfig(
+            config=config,
+            interim_results=False,
+        )
+
+        # Chunk size in frames: chunk_duration_ms * sample_rate / 1000
+        chunk_n_frames = int(chunk_duration_ms * sample_rate / 1000)
+
+        # Track when the last chunk is sent via a custom callback wrapper
+        last_chunk_sent_time = None
+
+        if simulate_realtime:
+            def _delay_and_track(audio_chunk: bytes, delay_sec: float):
+                nonlocal last_chunk_sent_time
+                time.sleep(delay_sec)
+                last_chunk_sent_time = time.perf_counter()
+            delay_callback = _delay_and_track
+        else:
+            def _track_only(audio_chunk: bytes, delay_sec: float):
+                nonlocal last_chunk_sent_time
+                last_chunk_sent_time = time.perf_counter()
+            delay_callback = _track_only
+
+        audio_iter = AudioChunkFileIterator(
+            input_file=audio_path,
+            chunk_n_frames=chunk_n_frames,
+            delay_callback=delay_callback,
+        )
+
+        t_start = time.perf_counter()
+        first_response_time: Optional[float] = None
+        last_final_time: Optional[float] = None
+        transcript = ""
+
+        responses = asr.streaming_response_generator(audio_iter, streaming_config)
+        for response in responses:
+            now = time.perf_counter()
+            if first_response_time is None and response.results:
+                first_response_time = now - t_start
+
+            for result in response.results:
+                if result.is_final:
+                    last_final_time = now - t_start
+                    if result.alternatives:
+                        transcript += result.alternatives[0].transcript + " "
+
+        t_end = time.perf_counter()
+        total_latency = t_end - t_start
+        transcript = transcript.strip()
+
+        # Compute timing breakdown
+        audio_streaming = (last_chunk_sent_time - t_start) if last_chunk_sent_time else total_latency
+        server_tail = (t_end - last_chunk_sent_time) if last_chunk_sent_time else 0.0
+
+        return StreamingRequestResult(
+            audio_file=audio_path,
+            audio_duration_sec=audio_duration,
+            total_latency_sec=total_latency,
+            audio_streaming_sec=audio_streaming,
+            server_compute_after_audio_sec=server_tail,
+            time_to_first_response_sec=first_response_time if first_response_time is not None else total_latency,
+            final_latency_sec=last_final_time if last_final_time is not None else total_latency,
+            transcript=transcript,
+            reference=reference,
+            success=True,
+        )
+    except Exception as e:
+        return StreamingRequestResult(
+            audio_file=audio_path, audio_duration_sec=audio_duration,
+            total_latency_sec=0, audio_streaming_sec=0,
+            server_compute_after_audio_sec=0,
+            time_to_first_response_sec=0, final_latency_sec=0,
+            transcript="", reference=reference, success=False, error=str(e),
+        )
+
+
+# ── Offline mode (matches riva_asr_client) ───────────────────────────────────
+
+@dataclass
+class OfflineRequestResult:
+    audio_file: str
+    audio_duration_sec: float
+    latency_sec: float
+    transcript: str
+    reference: str
+    success: bool
+    error: str = ""
+
+
+def _offline_recognize_one(
+    audio_path: str,
+    reference: str,
+    audio_duration: float,
+    auth: Auth,
+) -> OfflineRequestResult:
+    """Recognize a full audio file in one shot, matching riva_asr_client behavior."""
+    if not _RIVA_AVAILABLE:
+        return OfflineRequestResult(
             audio_file=audio_path, audio_duration_sec=audio_duration,
             latency_sec=0, transcript="", reference=reference,
             success=False, error="nvidia-riva-client not installed",
         )
     try:
-        auth = riva_client.Auth(uri=f"{host}:{port}", use_ssl=use_ssl)
-        asr = riva_client.ASRService(auth)
+        asr = ASRService(auth)
 
         with open(audio_path, "rb") as fh:
             audio_bytes = fh.read()
@@ -101,11 +244,12 @@ def _transcribe_one(
         except Exception:
             sample_rate = 16000
 
-        config = riva_client.RecognitionConfig(
-            encoding=riva_client.AudioEncoding.LINEAR_PCM,
+        config = RecognitionConfig(
+            encoding=AudioEncoding.LINEAR_PCM,
             language_code="en-US",
             max_alternatives=1,
-            enable_automatic_punctuation=False,
+            enable_automatic_punctuation=True,
+            enable_word_time_offsets=False,
             sample_rate_hertz=sample_rate,
         )
 
@@ -120,7 +264,7 @@ def _transcribe_one(
                     transcript += result.alternatives[0].transcript + " "
         transcript = transcript.strip()
 
-        return AsrRequestResult(
+        return OfflineRequestResult(
             audio_file=audio_path,
             audio_duration_sec=audio_duration,
             latency_sec=latency,
@@ -129,12 +273,14 @@ def _transcribe_one(
             success=True,
         )
     except Exception as e:
-        return AsrRequestResult(
+        return OfflineRequestResult(
             audio_file=audio_path, audio_duration_sec=audio_duration,
             latency_sec=0, transcript="", reference=reference,
             success=False, error=str(e),
         )
 
+
+# ── Benchmark runner ─────────────────────────────────────────────────────────
 
 def run_asr_benchmark(
     audio_dir: str,
@@ -144,6 +290,9 @@ def run_asr_benchmark(
     host: Optional[str] = None,
     port: Optional[int] = None,
     use_ssl: Optional[bool] = None,
+    mode: str = "streaming",
+    chunk_duration_ms: float = 800,
+    simulate_realtime: bool = True,
     gpu_index: int = 0,
     gpu_monitor_interval: float = 1.0,
     progress_callback: Optional[Callable[[str], None]] = None,
@@ -151,8 +300,13 @@ def run_asr_benchmark(
     """
     Run ASR benchmark across multiple concurrency levels.
 
-    Returns a dict with:
-      - results: list of ConcurrencyResult dicts
+    Args:
+        mode: "streaming" (chunked gRPC streaming) or "offline" (full-audio batch).
+        chunk_duration_ms: Audio chunk size for streaming mode (default: 800ms).
+        simulate_realtime: Whether to pace audio chunks at real-time speed (streaming only).
+
+    Returns dict with:
+      - results: list of per-concurrency result dicts
       - gpu_summary: GpuSummary dict or None
       - config_used: dict
     """
@@ -167,10 +321,15 @@ def run_asr_benchmark(
     if not samples:
         raise ValueError("No audio samples available.")
 
+    # Reuse a single Auth across all requests (connection sharing)
+    auth = Auth(uri=f"{host}:{port}", use_ssl=use_ssl)
+
     def _log(msg: str):
         logger.info(msg)
         if progress_callback:
             progress_callback(msg)
+
+    _log(f"ASR benchmark mode={mode} chunk={chunk_duration_ms}ms realtime={simulate_realtime}")
 
     monitor = GpuMonitor(gpu_index=gpu_index, interval=gpu_monitor_interval)
     monitor.start()
@@ -178,61 +337,118 @@ def run_asr_benchmark(
     concurrency_results: list[ConcurrencyResult] = []
 
     for concurrency in concurrency_levels:
-        _log(f"ASR benchmark: concurrency={concurrency}, requests={requests_per_level}")
-
+        _log(f"ASR {mode}: concurrency={concurrency}, requests={requests_per_level}")
         level_samples = random.choices(samples, k=requests_per_level)
 
         t_start = time.perf_counter()
-        request_results: list[AsrRequestResult] = []
 
-        with ThreadPoolExecutor(max_workers=concurrency) as executor:
-            futures = {
-                executor.submit(
-                    _transcribe_one,
-                    s["path"], s["reference"], s["duration"],
-                    host, port, use_ssl,
-                ): s
-                for s in level_samples
-            }
-            for future in as_completed(futures):
-                request_results.append(future.result())
+        if mode == "streaming":
+            results_list: list[StreamingRequestResult] = []
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                futures = {
+                    executor.submit(
+                        _streaming_recognize_one,
+                        s["path"], s["reference"], s["duration"],
+                        auth, chunk_duration_ms, simulate_realtime,
+                    ): s
+                    for s in level_samples
+                }
+                for future in as_completed(futures):
+                    results_list.append(future.result())
 
-        total_duration = time.perf_counter() - t_start
+            total_duration = time.perf_counter() - t_start
+            successes = [r for r in results_list if r.success]
+            errors = len(results_list) - len(successes)
 
-        successes = [r for r in request_results if r.success]
-        errors = len(request_results) - len(successes)
-        latencies = [r.latency_sec for r in successes]
+            latencies = [r.total_latency_sec for r in successes]
+            latency_stats = compute_latency_stats(latencies, errors, total_duration)
 
-        latency_stats = compute_latency_stats(latencies, errors, total_duration)
+            # RTFX = total audio duration / total compute time  (NVIDIA convention, higher = better)
+            total_audio_sec = sum(r.audio_duration_sec for r in successes)
+            rtfx = round(total_audio_sec / total_duration, 2) if total_duration > 0 else 0.0
 
-        rtf_values = [
-            compute_rtf(r.audio_duration_sec, r.latency_sec)
-            for r in successes if r.audio_duration_sec > 0
-        ]
-        mean_rtf = round(sum(rtf_values) / len(rtf_values), 4) if rtf_values else 0.0
+            # Timing breakdown
+            audio_streaming_times = [r.audio_streaming_sec for r in successes]
+            server_tail_times = [r.server_compute_after_audio_sec for r in successes]
+            mean_audio_streaming = round(sum(audio_streaming_times) / len(audio_streaming_times), 4) if audio_streaming_times else 0.0
+            mean_server_tail = round(sum(server_tail_times) / len(server_tail_times), 4) if server_tail_times else 0.0
+            p99_server_tail = round(percentile(server_tail_times, 99), 4) if server_tail_times else 0.0
 
-        refs = [r.reference for r in successes if r.reference]
-        hyps = [r.transcript for r in successes if r.reference]
-        wer_score = compute_wer_score(refs, hyps) if refs else None
+            # Mean audio duration for reference
+            mean_audio_dur = round(sum(r.audio_duration_sec for r in successes) / len(successes), 4) if successes else 0.0
 
-        total_audio_hrs = sum(r.audio_duration_sec for r in successes) / 3600
-        audio_hours_per_hour = round(total_audio_hrs / (total_duration / 3600), 2) if total_duration > 0 else 0.0
+            # Time to first response
+            ttfrs = [r.time_to_first_response_sec for r in successes]
+            mean_ttfr = round(sum(ttfrs) / len(ttfrs), 4) if ttfrs else 0.0
 
-        concurrency_results.append(ConcurrencyResult(
-            concurrency=concurrency,
-            latency=latency_stats,
-            extra={
-                "mean_rtf": mean_rtf,
-                "wer": wer_score,
-                "audio_hours_per_hour": audio_hours_per_hour,
-            },
-        ))
-        _log(f"  -> mean_latency={latency_stats.mean_sec:.3f}s RTF={mean_rtf:.3f} WER={wer_score}")
+            # WER
+            refs = [r.reference for r in successes if r.reference]
+            hyps = [r.transcript for r in successes if r.reference]
+            wer_score = compute_wer_score(refs, hyps) if refs else None
+
+            concurrency_results.append(ConcurrencyResult(
+                concurrency=concurrency,
+                latency=latency_stats,
+                extra={
+                    "rtfx": rtfx,
+                    "mean_audio_duration_sec": mean_audio_dur,
+                    "mean_audio_streaming_sec": mean_audio_streaming,
+                    "mean_server_compute_after_audio_sec": mean_server_tail,
+                    "p99_server_compute_after_audio_sec": p99_server_tail,
+                    "mean_time_to_first_response_sec": mean_ttfr,
+                    "wer": wer_score,
+                    "total_audio_sec": round(total_audio_sec, 2),
+                },
+            ))
+            _log(f"  -> RTFX={rtfx}  audio={mean_audio_dur:.1f}s  "
+                 f"stream={mean_audio_streaming:.1f}s  server_tail={mean_server_tail:.3f}s  WER={wer_score}")
+
+        else:  # offline
+            results_list_off: list[OfflineRequestResult] = []
+            with ThreadPoolExecutor(max_workers=concurrency) as executor:
+                futures = {
+                    executor.submit(
+                        _offline_recognize_one,
+                        s["path"], s["reference"], s["duration"], auth,
+                    ): s
+                    for s in level_samples
+                }
+                for future in as_completed(futures):
+                    results_list_off.append(future.result())
+
+            total_duration = time.perf_counter() - t_start
+            successes_off = [r for r in results_list_off if r.success]
+            errors = len(results_list_off) - len(successes_off)
+
+            latencies = [r.latency_sec for r in successes_off]
+            latency_stats = compute_latency_stats(latencies, errors, total_duration)
+
+            total_audio_sec = sum(r.audio_duration_sec for r in successes_off)
+            rtfx = round(total_audio_sec / total_duration, 2) if total_duration > 0 else 0.0
+
+            refs = [r.reference for r in successes_off if r.reference]
+            hyps = [r.transcript for r in successes_off if r.reference]
+            wer_score = compute_wer_score(refs, hyps) if refs else None
+
+            concurrency_results.append(ConcurrencyResult(
+                concurrency=concurrency,
+                latency=latency_stats,
+                extra={
+                    "rtfx": rtfx,
+                    "wer": wer_score,
+                    "total_audio_sec": round(total_audio_sec, 2),
+                },
+            ))
+            _log(f"  -> RTFX={rtfx}  mean_latency={latency_stats.mean_sec:.3f}s  WER={wer_score}")
 
     gpu_summary = monitor.stop()
 
     return {
         "results": [r.to_dict() for r in concurrency_results],
         "gpu_summary": gpu_summary.to_dict() if gpu_summary else None,
-        "config_used": {"host": host, "port": port, "use_ssl": use_ssl},
+        "config_used": {
+            "host": host, "port": port, "use_ssl": use_ssl,
+            "mode": mode, "chunk_duration_ms": chunk_duration_ms,
+            "simulate_realtime": simulate_realtime,
+        },
     }

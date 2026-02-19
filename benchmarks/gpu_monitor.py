@@ -165,6 +165,34 @@ class GpuMonitor:
         else:
             logger.info("GPU monitor running in no-op mode (no GPU or pynvml unavailable)")
 
+    def snapshot(self, since: float) -> dict:
+        """Return GPU stats for samples collected since the given timestamp.
+
+        Returns a dict with peak/mean utilization, memory, temperature, power
+        for the time window, suitable for embedding in per-concurrency results.
+        """
+        window = [s for s in self._samples if s.timestamp >= since]
+        if not window:
+            return {}
+
+        def _peak(attr):
+            return max(getattr(s, attr) for s in window)
+
+        def _mean(attr):
+            vals = [getattr(s, attr) for s in window]
+            return sum(vals) / len(vals)
+
+        return {
+            "gpu_samples": len(window),
+            "gpu_util_peak_pct": round(_peak("utilization_gpu_pct"), 1),
+            "gpu_util_mean_pct": round(_mean("utilization_gpu_pct"), 1),
+            "gpu_mem_peak_mb": round(_peak("memory_used_mb"), 0),
+            "gpu_mem_mean_mb": round(_mean("memory_used_mb"), 0),
+            "gpu_power_peak_w": round(_peak("power_draw_w"), 0),
+            "gpu_power_mean_w": round(_mean("power_draw_w"), 0),
+            "gpu_temp_peak_c": round(_peak("temperature_c"), 0),
+        }
+
     def stop(self) -> Optional[GpuSummary]:
         duration = time.time() - self._start_time
         self._stop_event.set()

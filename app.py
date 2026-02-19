@@ -213,7 +213,26 @@ with st.sidebar:
         )
 
     with st.expander("Pipeline Settings"):
-        if pipeline_key == "tts":
+        if pipeline_key == "asr":
+            asr_mode = st.selectbox(
+                "Mode", ["streaming", "offline"], key="asr_mode",
+                help="streaming: chunked gRPC (matches riva_streaming_asr_client). "
+                     "offline: full-audio batch (matches riva_asr_client).",
+            )
+            asr_chunk_ms = st.selectbox(
+                "Chunk Duration (ms)", [160, 800, 960], key="asr_chunk_ms",
+                help="Audio chunk size for streaming mode.",
+            )
+            asr_simulate_rt = st.checkbox(
+                "Simulate Real-Time", value=True, key="asr_simulate_rt",
+                help="Pace audio chunks at real-time speed.",
+            )
+        elif pipeline_key == "tts":
+            tts_mode = st.selectbox(
+                "Mode", ["streaming", "offline"], key="tts_mode",
+                help="streaming: chunked gRPC (matches riva_tts_perf_client --online=true). "
+                     "offline: full audio in one response.",
+            )
             prompt_tier_tts = st.selectbox(
                 "Prompt Tier", ["all", "short", "medium", "long"], key="tts_prompt_tier"
             )
@@ -316,6 +335,9 @@ def run_benchmark_thread(pipeline_k: str, params: dict, progress_q: queue.Queue)
                 host=params["host"],
                 port=params["port"],
                 use_ssl=params["use_ssl"],
+                mode=params.get("asr_mode", "streaming"),
+                chunk_duration_ms=params.get("asr_chunk_ms", 800),
+                simulate_realtime=params.get("asr_simulate_rt", True),
                 gpu_index=params["gpu_index"],
                 gpu_monitor_interval=params["gpu_interval"],
                 progress_callback=cb,
@@ -332,6 +354,7 @@ def run_benchmark_thread(pipeline_k: str, params: dict, progress_q: queue.Queue)
                 use_ssl=params["use_ssl"],
                 voice_name=params.get("voice_name", "English-US.Female-1"),
                 sample_rate_hz=params.get("sample_rate_hz", 22050),
+                mode=params.get("tts_mode", "streaming"),
                 gpu_index=params["gpu_index"],
                 gpu_monitor_interval=params["gpu_interval"],
                 progress_callback=cb,
@@ -383,12 +406,16 @@ if run_button and not st.session_state.is_running:
             "host": st.session_state.get("asr_host", "localhost"),
             "port": int(st.session_state.get("asr_port", 50051)),
             "use_ssl": bool(st.session_state.get("asr_ssl", False)),
+            "asr_mode": st.session_state.get("asr_mode", "streaming"),
+            "asr_chunk_ms": float(st.session_state.get("asr_chunk_ms", 800)),
+            "asr_simulate_rt": bool(st.session_state.get("asr_simulate_rt", True)),
         })
     elif pipeline_key == "tts":
         params.update({
             "host": st.session_state.get("tts_host", "localhost"),
             "port": int(st.session_state.get("tts_port", 50052)),
             "use_ssl": bool(st.session_state.get("tts_ssl", False)),
+            "tts_mode": st.session_state.get("tts_mode", "streaming"),
             "prompt_tier": st.session_state.get("tts_prompt_tier", "all"),
             "voice_name": st.session_state.get("tts_voice", "English-US.Female-1"),
             "sample_rate_hz": int(st.session_state.get("tts_sr", 22050)),
@@ -495,40 +522,63 @@ with tab_results:
             col_a.plotly_chart(make_throughput_chart(results_list), use_container_width=True)
 
             if pl == "asr":
-                rtf_fig = go.Figure()
-                rtf_fig.add_trace(go.Scatter(
+                rtfx_fig = go.Figure()
+                rtfx_fig.add_trace(go.Scatter(
                     x=[r["concurrency"] for r in results_list],
-                    y=[r.get("mean_rtf", 0) for r in results_list],
-                    mode="lines+markers", name="RTF",
+                    y=[r.get("rtfx", 0) for r in results_list],
+                    mode="lines+markers", name="RTFX",
                     line=dict(color="#BA55D3", width=2),
                 ))
-                rtf_fig.update_layout(
-                    title="Real-Time Factor vs Concurrency",
-                    xaxis_title="Concurrency", yaxis_title="RTF",
+                rtfx_fig.update_layout(
+                    title="RTFX vs Concurrency (higher = better)",
+                    xaxis_title="Concurrency", yaxis_title="RTFX (x real-time)",
                     template="plotly_dark", height=380,
                     margin=dict(l=40, r=20, t=50, b=40),
                 )
-                col_b.plotly_chart(rtf_fig, use_container_width=True)
+                col_b.plotly_chart(rtfx_fig, use_container_width=True)
 
                 wer_vals = [r.get("wer") for r in results_list if r.get("wer") is not None]
                 if wer_vals:
                     st.metric("Word Error Rate (WER)", f"{wer_vals[-1] * 100:.2f}%")
 
             elif pl == "tts":
-                ttfb_fig = go.Figure()
-                ttfb_fig.add_trace(go.Scatter(
+                rtfx_fig = go.Figure()
+                rtfx_fig.add_trace(go.Scatter(
                     x=[r["concurrency"] for r in results_list],
-                    y=[r.get("mean_time_to_first_byte_sec", 0) * 1000 for r in results_list],
-                    mode="lines+markers", name="TTFB",
-                    line=dict(color="#20B2AA", width=2),
+                    y=[r.get("rtfx", 0) for r in results_list],
+                    mode="lines+markers", name="RTFX",
+                    line=dict(color="#BA55D3", width=2),
                 ))
-                ttfb_fig.update_layout(
-                    title="Time-to-First-Byte vs Concurrency",
-                    xaxis_title="Concurrency", yaxis_title="TTFB (ms)",
+                rtfx_fig.update_layout(
+                    title="RTFX vs Concurrency (higher = better)",
+                    xaxis_title="Concurrency", yaxis_title="RTFX (x real-time)",
                     template="plotly_dark", height=380,
                     margin=dict(l=40, r=20, t=50, b=40),
                 )
-                col_b.plotly_chart(ttfb_fig, use_container_width=True)
+                col_b.plotly_chart(rtfx_fig, use_container_width=True)
+
+                tts_mode_used = res.get("config_used", {}).get("mode", "streaming")
+                if tts_mode_used == "streaming":
+                    ttfa_fig = go.Figure()
+                    ttfa_fig.add_trace(go.Scatter(
+                        x=[r["concurrency"] for r in results_list],
+                        y=[r.get("mean_time_to_first_audio_sec", 0) * 1000 for r in results_list],
+                        mode="lines+markers", name="Mean TTFA",
+                        line=dict(color="#20B2AA", width=2),
+                    ))
+                    ttfa_fig.add_trace(go.Scatter(
+                        x=[r["concurrency"] for r in results_list],
+                        y=[r.get("p99_time_to_first_audio_sec", 0) * 1000 for r in results_list],
+                        mode="lines+markers", name="P99 TTFA",
+                        line=dict(color="#FF6347", width=2, dash="dash"),
+                    ))
+                    ttfa_fig.update_layout(
+                        title="Time-to-First-Audio vs Concurrency",
+                        xaxis_title="Concurrency", yaxis_title="TTFA (ms)",
+                        template="plotly_dark", height=380,
+                        margin=dict(l=40, r=20, t=50, b=40),
+                    )
+                    st.plotly_chart(ttfa_fig, use_container_width=True)
 
             elif pl == "llm":
                 ttft_fig = go.Figure()

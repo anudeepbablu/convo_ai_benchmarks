@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 import statistics
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -12,6 +13,9 @@ try:
     _JIWER_AVAILABLE = True
 except ImportError:
     _JIWER_AVAILABLE = False
+
+
+_PUNCTUATION_RE = re.compile(r"[^\w\s]")
 
 
 @dataclass
@@ -102,11 +106,13 @@ def compute_latency_stats(
     )
 
 
-def compute_rtf(audio_duration_sec: float, processing_time_sec: float) -> float:
-    """Real-Time Factor: processing_time / audio_duration. <1 means faster than real-time."""
-    if audio_duration_sec <= 0:
-        return 0.0
-    return round(processing_time_sec / audio_duration_sec, 4)
+
+def _normalize_for_wer(text: str) -> str:
+    """Lowercase, strip punctuation, collapse whitespace — standard ASR eval normalization."""
+    text = text.lower()
+    text = _PUNCTUATION_RE.sub("", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
 
 def compute_wer_score(references: list[str], hypotheses: list[str]) -> Optional[float]:
@@ -116,12 +122,9 @@ def compute_wer_score(references: list[str], hypotheses: list[str]) -> Optional[
     if not references or not hypotheses:
         return None
     try:
-        score = compute_wer(references, hypotheses)
+        refs = [_normalize_for_wer(r) for r in references]
+        hyps = [_normalize_for_wer(h) for h in hypotheses]
+        score = compute_wer(refs, hyps)
         return round(float(score), 4)
     except Exception:
         return None
-
-
-def aggregate_concurrency_results(results: list[ConcurrencyResult]) -> list[dict]:
-    """Convert a list of ConcurrencyResult to a list of dicts for export."""
-    return [r.to_dict() for r in results]

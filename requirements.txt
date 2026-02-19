@@ -18,12 +18,8 @@ jiwer>=3.0.4
 pandas>=2.0.0
 datasets>=2.20.0
 
-# HTTP
-httpx>=0.27.0
-
 # Config
 pyyaml>=6.0.1
-python-dotenv>=1.0.0
 
 # Progress
 tqdm>=4.66.0
@@ -31,7 +27,6 @@ tqdm>=4.66.0
 # UI
 streamlit>=1.36.0
 plotly>=5.22.0
-altair>=5.3.0
 
 # gRPC (pulled in by riva-client but pinned for stability)
 grpcio>=1.64.0
