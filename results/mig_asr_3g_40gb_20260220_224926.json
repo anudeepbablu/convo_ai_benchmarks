@@ -1,0 +1,501 @@
+{
+  "timestamp": "2026-02-20T22:49:26.723600",
+  "mig_profile": "3g.40gb",
+  "num_instances": 2,
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "mig_uuids": [
+    "MIG-f55afaa4-9289-5d76-81ff-525e863cfc92",
+    "MIG-5b461c5e-a7d8-56a4-b434-27bc690d033d"
+  ],
+  "mode": "offline",
+  "concurrency_levels": [
+    1,
+    4,
+    8,
+    16
+  ],
+  "requests_per_level": 30,
+  "wall_time_sec": 207.9,
+  "isolated": {
+    "0": {
+      "results": [
+        {
+          "concurrency": 1,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.075,
+          "median_sec": 0.0552,
+          "p90_sec": 0.0937,
+          "p95_sec": 0.1049,
+          "p99_sec": 0.4656,
+          "min_sec": 0.0348,
+          "max_sec": 0.6091,
+          "std_sec": 0.1026,
+          "throughput_rps": 13.277,
+          "total_duration_sec": 2.26,
+          "rtfx": 100.92,
+          "wer": 0.0223,
+          "total_audio_sec": 228.03
+        },
+        {
+          "concurrency": 4,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.1058,
+          "median_sec": 0.0971,
+          "p90_sec": 0.1775,
+          "p95_sec": 0.1881,
+          "p99_sec": 0.2361,
+          "min_sec": 0.0439,
+          "max_sec": 0.253,
+          "std_sec": 0.0484,
+          "throughput_rps": 36.597,
+          "total_duration_sec": 0.82,
+          "rtfx": 342.51,
+          "wer": 0.0444,
+          "total_audio_sec": 280.77
+        },
+        {
+          "concurrency": 8,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.1581,
+          "median_sec": 0.1607,
+          "p90_sec": 0.212,
+          "p95_sec": 0.2315,
+          "p99_sec": 0.2511,
+          "min_sec": 0.0496,
+          "max_sec": 0.2529,
+          "std_sec": 0.0531,
+          "throughput_rps": 45.537,
+          "total_duration_sec": 0.659,
+          "rtfx": 334.83,
+          "wer": 0.0467,
+          "total_audio_sec": 220.59
+        },
+        {
+          "concurrency": 16,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.2744,
+          "median_sec": 0.2907,
+          "p90_sec": 0.3826,
+          "p95_sec": 0.4131,
+          "p99_sec": 0.4247,
+          "min_sec": 0.0617,
+          "max_sec": 0.4249,
+          "std_sec": 0.0935,
+          "throughput_rps": 45.948,
+          "total_duration_sec": 0.653,
+          "rtfx": 363.72,
+          "wer": 0.02,
+          "total_audio_sec": 237.47
+        }
+      ],
+      "gpu_summary": null,
+      "config_used": {
+        "host": "localhost",
+        "port": 50061,
+        "use_ssl": false,
+        "mode": "offline",
+        "chunk_duration_ms": 800,
+        "simulate_realtime": false
+      },
+      "instance_idx": 0,
+      "port": 50061
+    },
+    "1": {
+      "results": [
+        {
+          "concurrency": 1,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.0763,
+          "median_sec": 0.0563,
+          "p90_sec": 0.123,
+          "p95_sec": 0.1413,
+          "p99_sec": 0.2549,
+          "min_sec": 0.0355,
+          "max_sec": 0.2967,
+          "std_sec": 0.0518,
+          "throughput_rps": 13.033,
+          "total_duration_sec": 2.302,
+          "rtfx": 120.09,
+          "wer": 0.019,
+          "total_audio_sec": 276.44
+        },
+        {
+          "concurrency": 4,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.0903,
+          "median_sec": 0.0839,
+          "p90_sec": 0.1233,
+          "p95_sec": 0.1392,
+          "p99_sec": 0.167,
+          "min_sec": 0.0493,
+          "max_sec": 0.1783,
+          "std_sec": 0.0289,
+          "throughput_rps": 42.934,
+          "total_duration_sec": 0.699,
+          "rtfx": 274.25,
+          "wer": 0.0429,
+          "total_audio_sec": 191.63
+        },
+        {
+          "concurrency": 8,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.1737,
+          "median_sec": 0.1718,
+          "p90_sec": 0.2375,
+          "p95_sec": 0.2698,
+          "p99_sec": 0.3024,
+          "min_sec": 0.0597,
+          "max_sec": 0.3068,
+          "std_sec": 0.0598,
+          "throughput_rps": 40.849,
+          "total_duration_sec": 0.734,
+          "rtfx": 322.1,
+          "wer": 0.0346,
+          "total_audio_sec": 236.55
+        },
+        {
+          "concurrency": 16,
+          "count": 30,
+          "success_count": 30,
+          "error_count": 0,
+          "error_rate": 0.0,
+          "mean_sec": 0.2757,
+          "median_sec": 0.3154,
+          "p90_sec": 0.433,
+          "p95_sec": 0.4623,
+          "p99_sec": 0.4818,
+          "min_sec": 0.0444,
+          "max_sec": 0.4882,
+          "std_sec": 0.1333,
+          "throughput_rps": 44.722,
+          "total_duration_sec": 0.671,
+          "rtfx": 277.95,
+          "wer": 0.0297,
+          "total_audio_sec": 186.45
+        }
+      ],
+      "gpu_summary": null,
+      "config_used": {
+        "host": "localhost",
+        "port": 50062,
+        "use_ssl": false,
+        "mode": "offline",
+        "chunk_duration_ms": 800,
+        "simulate_realtime": false
+      },
+      "instance_idx": 1,
+      "port": 50062
+    }
+  },
+  "aggregate": {
+    "aggregate_results": [
+      {
+        "concurrency": 1,
+        "aggregate_throughput_rps": 35.784,
+        "per_instance": [
+          {
+            "instance": 0,
+            "port": 50061,
+            "throughput_rps": 17.103,
+            "mean_sec": 0.0581,
+            "p99_sec": 0.1016,
+            "rtfx": 123.83,
+            "error_count": 0
+          },
+          {
+            "instance": 1,
+            "port": 50062,
+            "throughput_rps": 18.681,
+            "mean_sec": 0.0532,
+            "p99_sec": 0.0834,
+            "rtfx": 108.97,
+            "error_count": 0
+          }
+        ]
+      },
+      {
+        "concurrency": 4,
+        "aggregate_throughput_rps": 71.761,
+        "per_instance": [
+          {
+            "instance": 0,
+            "port": 50061,
+            "throughput_rps": 35.127,
+            "mean_sec": 0.1081,
+            "p99_sec": 0.1705,
+            "rtfx": 299.76,
+            "error_count": 0
+          },
+          {
+            "instance": 1,
+            "port": 50062,
+            "throughput_rps": 36.634,
+            "mean_sec": 0.103,
+            "p99_sec": 0.2121,
+            "rtfx": 294.47,
+            "error_count": 0
+          }
+        ]
+      },
+      {
+        "concurrency": 8,
+        "aggregate_throughput_rps": 85.223,
+        "per_instance": [
+          {
+            "instance": 0,
+            "port": 50061,
+            "throughput_rps": 40.673,
+            "mean_sec": 0.1824,
+            "p99_sec": 0.2592,
+            "rtfx": 373.66,
+            "error_count": 0
+          },
+          {
+            "instance": 1,
+            "port": 50062,
+            "throughput_rps": 44.55,
+            "mean_sec": 0.1563,
+            "p99_sec": 0.3481,
+            "rtfx": 342.48,
+            "error_count": 0
+          }
+        ]
+      },
+      {
+        "concurrency": 16,
+        "aggregate_throughput_rps": 90.893,
+        "per_instance": [
+          {
+            "instance": 0,
+            "port": 50061,
+            "throughput_rps": 46.104,
+            "mean_sec": 0.2763,
+            "p99_sec": 0.4149,
+            "rtfx": 333.74,
+            "error_count": 0
+          },
+          {
+            "instance": 1,
+            "port": 50062,
+            "throughput_rps": 44.789,
+            "mean_sec": 0.283,
+            "p99_sec": 0.4954,
+            "rtfx": 296.04,
+            "error_count": 0
+          }
+        ]
+      }
+    ],
+    "instance_results": {
+      "1": {
+        "results": [
+          {
+            "concurrency": 1,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.0532,
+            "median_sec": 0.0557,
+            "p90_sec": 0.0709,
+            "p95_sec": 0.081,
+            "p99_sec": 0.0834,
+            "min_sec": 0.0346,
+            "max_sec": 0.0837,
+            "std_sec": 0.0147,
+            "throughput_rps": 18.681,
+            "total_duration_sec": 1.606,
+            "rtfx": 108.97,
+            "wer": 0.0454,
+            "total_audio_sec": 174.99
+          },
+          {
+            "concurrency": 4,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.103,
+            "median_sec": 0.0957,
+            "p90_sec": 0.146,
+            "p95_sec": 0.1905,
+            "p99_sec": 0.2121,
+            "min_sec": 0.0445,
+            "max_sec": 0.2151,
+            "std_sec": 0.0425,
+            "throughput_rps": 36.634,
+            "total_duration_sec": 0.819,
+            "rtfx": 294.47,
+            "wer": 0.0129,
+            "total_audio_sec": 241.15
+          },
+          {
+            "concurrency": 8,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.1563,
+            "median_sec": 0.142,
+            "p90_sec": 0.2414,
+            "p95_sec": 0.2819,
+            "p99_sec": 0.3481,
+            "min_sec": 0.0577,
+            "max_sec": 0.3629,
+            "std_sec": 0.0749,
+            "throughput_rps": 44.55,
+            "total_duration_sec": 0.673,
+            "rtfx": 342.48,
+            "wer": 0.0246,
+            "total_audio_sec": 230.62
+          },
+          {
+            "concurrency": 16,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.283,
+            "median_sec": 0.2742,
+            "p90_sec": 0.4167,
+            "p95_sec": 0.4625,
+            "p99_sec": 0.4954,
+            "min_sec": 0.0476,
+            "max_sec": 0.5076,
+            "std_sec": 0.1316,
+            "throughput_rps": 44.789,
+            "total_duration_sec": 0.67,
+            "rtfx": 296.04,
+            "wer": 0.0445,
+            "total_audio_sec": 198.29
+          }
+        ],
+        "gpu_summary": null,
+        "config_used": {
+          "host": "localhost",
+          "port": 50062,
+          "use_ssl": false,
+          "mode": "offline",
+          "chunk_duration_ms": 800,
+          "simulate_realtime": false
+        }
+      },
+      "0": {
+        "results": [
+          {
+            "concurrency": 1,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.0581,
+            "median_sec": 0.0566,
+            "p90_sec": 0.0926,
+            "p95_sec": 0.1004,
+            "p99_sec": 0.1016,
+            "min_sec": 0.0358,
+            "max_sec": 0.1019,
+            "std_sec": 0.0204,
+            "throughput_rps": 17.103,
+            "total_duration_sec": 1.754,
+            "rtfx": 123.83,
+            "wer": 0.034,
+            "total_audio_sec": 217.2
+          },
+          {
+            "concurrency": 4,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.1081,
+            "median_sec": 0.1067,
+            "p90_sec": 0.1419,
+            "p95_sec": 0.1567,
+            "p99_sec": 0.1705,
+            "min_sec": 0.0552,
+            "max_sec": 0.1716,
+            "std_sec": 0.0302,
+            "throughput_rps": 35.127,
+            "total_duration_sec": 0.854,
+            "rtfx": 299.76,
+            "wer": 0.0213,
+            "total_audio_sec": 256.01
+          },
+          {
+            "concurrency": 8,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.1824,
+            "median_sec": 0.1918,
+            "p90_sec": 0.2304,
+            "p95_sec": 0.2475,
+            "p99_sec": 0.2592,
+            "min_sec": 0.0432,
+            "max_sec": 0.2602,
+            "std_sec": 0.0449,
+            "throughput_rps": 40.673,
+            "total_duration_sec": 0.738,
+            "rtfx": 373.66,
+            "wer": 0.0367,
+            "total_audio_sec": 275.61
+          },
+          {
+            "concurrency": 16,
+            "count": 30,
+            "success_count": 30,
+            "error_count": 0,
+            "error_rate": 0.0,
+            "mean_sec": 0.2763,
+            "median_sec": 0.2894,
+            "p90_sec": 0.4058,
+            "p95_sec": 0.4083,
+            "p99_sec": 0.4149,
+            "min_sec": 0.0419,
+            "max_sec": 0.4167,
+            "std_sec": 0.1061,
+            "throughput_rps": 46.104,
+            "total_duration_sec": 0.651,
+            "rtfx": 333.74,
+            "wer": 0.0201,
+            "total_audio_sec": 217.17
+          }
+        ],
+        "gpu_summary": null,
+        "config_used": {
+          "host": "localhost",
+          "port": 50061,
+          "use_ssl": false,
+          "mode": "offline",
+          "chunk_duration_ms": 800,
+          "simulate_realtime": false
+        }
+      }
+    },
+    "wall_time_sec": 4.08,
+    "num_instances": 2
+  }
+}

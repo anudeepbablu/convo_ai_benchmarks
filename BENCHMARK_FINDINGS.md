@@ -1,7 +1,7 @@
 # NVIDIA NIM Benchmark Findings — ASR & TTS
 
 **Hardware:** NVIDIA H100 80GB HBM3 (single GPU)
-**Date:** 2026-02-19
+**Date:** 2026-02-19 (initial), 2026-02-20 (MIG benchmarks)
 **Benchmark Tool:** riva-bench (custom gRPC benchmark suite using `nvidia-riva-client`)
 
 ---
@@ -178,7 +178,118 @@ ASR (Parakeet CTC) does **not** have this issue — its acoustic model supports 
 
 ---
 
-## 7. Capacity Planning — 5,000 Concurrent Real-Time Conversations
+## 7. MIG Benchmarks — ASR on Partitioned H100
+
+**Profile:** `3g.40gb` x 2 instances (H100 split into two 40GB slices)
+**Model:** Parakeet CTC 1.1B
+**Concurrency levels:** 1, 4, 8, 16 per instance
+**Requests per level:** 30
+
+### 7a. Offline Mode — Pure GPU/Model Processing Latency
+
+In offline mode, the full audio file is sent in a single gRPC call. The measured latency is entirely GPU/model processing time with no streaming overhead.
+
+#### Non-MIG Baseline (Full GPU)
+
+| Concurrency | Mean (ms) | Median (ms) | P90 (ms) | P95 (ms) | P99 (ms) | Throughput (r/s) | RTFX | WER |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 67 | 56 | 95 | 115 | 228 | 14.7 | 112x | 2.5% |
+| 4 | 99 | 92 | 161 | 184 | 210 | 37.9 | 304x | 1.6% |
+| 8 | 165 | 179 | 233 | 236 | 248 | 44.4 | 376x | 2.6% |
+| 16 | 275 | 290 | 402 | 408 | 418 | 43.8 | 352x | 2.8% |
+
+**GPU:** Peak 72% utilization, 15 GB VRAM, 224W power, 34C
+
+#### MIG Per-Instance Isolated (3g.40gb)
+
+**Instance 0:**
+
+| Concurrency | Mean (ms) | Median (ms) | P90 (ms) | P95 (ms) | P99 (ms) | Throughput (r/s) | RTFX | WER |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 75 | 55 | 94 | 105 | 466 | 13.3 | 101x | 2.2% |
+| 4 | 106 | 97 | 178 | 188 | 236 | 36.6 | 343x | 4.4% |
+| 8 | 158 | 161 | 212 | 232 | 251 | 45.5 | 335x | 4.7% |
+| 16 | 274 | 291 | 383 | 413 | 425 | 45.9 | 364x | 2.0% |
+
+**Instance 1:**
+
+| Concurrency | Mean (ms) | Median (ms) | P90 (ms) | P95 (ms) | P99 (ms) | Throughput (r/s) | RTFX | WER |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 76 | 56 | 123 | 141 | 255 | 13.0 | 120x | 1.9% |
+| 4 | 90 | 84 | 123 | 139 | 167 | 42.9 | 274x | 4.3% |
+| 8 | 174 | 172 | 238 | 270 | 302 | 40.8 | 322x | 3.5% |
+| 16 | 276 | 315 | 433 | 462 | 482 | 44.7 | 278x | 3.0% |
+
+#### MIG Aggregate (Both Instances Simultaneous)
+
+| Concurrency/inst | Inst 0 Mean (ms) | Inst 1 Mean (ms) | Inst 0 P99 (ms) | Inst 1 P99 (ms) | Aggregate Throughput (r/s) |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 58 | 53 | 102 | 83 | 35.8 |
+| 4 | 108 | 103 | 171 | 212 | 71.8 |
+| 8 | 182 | 156 | 259 | 348 | 85.2 |
+| 16 | 276 | 283 | 415 | 495 | 90.9 |
+
+### 7b. Streaming Mode — MIG (3g.40gb x 2)
+
+**Mode:** Streaming (800ms audio chunks, real-time pacing)
+
+#### MIG Per-Instance Isolated
+
+**Instance 0:**
+
+| Concurrency | Mean (ms) | P99 (ms) | Throughput (r/s) | RTFX | Server Tail (ms) | P99 Tail (ms) | WER |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 7,070 | 17,185 | 0.1 | 1.0x | 165 | 2,257 | 5.9% |
+| 4 | 7,202 | 24,679 | 0.5 | 3.5x | 67 | 99 | 4.6% |
+| 8 | 8,830 | 19,657 | 0.7 | 5.9x | 74 | 108 | 3.4% |
+| 16 | 8,927 | 25,235 | 0.9 | 7.5x | 80 | 137 | 4.0% |
+
+**Instance 1:**
+
+| Concurrency | Mean (ms) | P99 (ms) | Throughput (r/s) | RTFX | Server Tail (ms) | P99 Tail (ms) | WER |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 8,380 | 19,229 | 0.1 | 1.0x | 69 | 104 | 4.1% |
+| 4 | 7,250 | 21,716 | 0.5 | 3.6x | 70 | 104 | 3.8% |
+| 8 | 6,563 | 21,543 | 0.9 | 6.0x | 63 | 97 | 3.8% |
+| 16 | 10,561 | 21,870 | 0.8 | 8.8x | 68 | 102 | 4.6% |
+
+#### MIG Aggregate (Both Instances Simultaneous)
+
+| Concurrency/inst | Aggregate Throughput (r/s) | Inst 0 (r/s) | Inst 1 (r/s) |
+| ---: | ---: | ---: | ---: |
+| 1 | 0.3 | 0.1 | 0.1 |
+| 4 | 1.0 | 0.5 | 0.5 |
+| 8 | 1.8 | 0.8 | 1.0 |
+| 16 | 2.3 | 0.9 | 1.4 |
+
+### 7c. MIG vs Non-MIG Comparison
+
+| Metric | Non-MIG (Full GPU) | MIG Isolated (per inst) | MIG Aggregate (2 inst) |
+| :--- | ---: | ---: | ---: |
+| **Offline mean latency @ c=1** | 67ms | 75-76ms | 53-58ms |
+| **Offline mean latency @ c=8** | 165ms | 158-174ms | 156-182ms |
+| **Offline mean latency @ c=16** | 275ms | 274-276ms | 276-283ms |
+| **Offline P99 latency @ c=16** | 418ms | 425-482ms | 415-495ms |
+| **Offline peak throughput** | 44.4 req/s (c=8) | 45.9 req/s (c=16) | **90.9 req/s** (c=16) |
+| **Streaming server tail @ c=8** | 57ms (from section 2) | 63-74ms | 69-74ms |
+| **Streaming peak throughput** | 2.5 req/s (c=256) | 0.9 req/s (c=16) | 2.3 req/s (c=16) |
+| **VRAM used** | 15 GB / 80 GB (19%) | ~15 GB / 40 GB (38%) | ~30 GB / 80 GB (38%) |
+| **GPU utilization** | 72% peak | N/A (NVML unsupported in MIG) | N/A |
+
+### 7d. MIG Key Findings
+
+1. **Per-instance latency is virtually identical to full GPU.** A single 3g.40gb MIG slice (40 GB) processes audio at the same speed as the full 80 GB GPU — 67ms vs 75ms at c=1, 275ms vs 274ms at c=16. The Parakeet CTC 1.1B model fits entirely within a single slice.
+2. **MIG doubles aggregate throughput in offline mode.** 90.9 req/s with 2 instances vs 44.4 req/s on full GPU — the second slice adds nearly 100% throughput with no latency penalty.
+3. **The full GPU is severely underutilized without MIG.** Only 72% peak utilization and 15 GB of 80 GB VRAM. MIG lets you use the idle compute and memory by running a second (or more) instance.
+4. **No contention under simultaneous load.** When both MIG instances run at full concurrency, per-instance latencies remain comparable to isolated runs — MIG provides true compute isolation.
+5. **Streaming throughput is real-time-bound, not compute-bound.** Streaming mode at c=16/instance gives only 2.3 req/s aggregate because audio chunks are paced at real-time speed. Offline mode reveals the actual model capacity: 90.9 req/s.
+6. **Server tail latency is consistent across MIG and non-MIG.** 57-80ms regardless of configuration — the incremental processing overhead is constant.
+7. **NVML GPU monitoring is not supported in MIG mode.** `nvmlDeviceGetUtilizationRates()` fails with "Not Supported" on the physical GPU handle when MIG is enabled. Per-MIG-device monitoring requires `nvmlDeviceGetMigDeviceHandleByIndex()`.
+8. **Model caching matters for container startup.** First launch downloads ~19 GB from NGC (~2-3 min). With cached models mapped to `/home/nvs/.cache/nim`, containers start in <30s.
+
+---
+
+## 8. Capacity Planning — 5,000 Concurrent Real-Time Conversations
 
 ### Assumptions
 
@@ -195,7 +306,8 @@ ASR (Parakeet CTC) does **not** have this issue — its acoustic model supports 
 - **Concurrent streams per GPU:** ~200 (conservative, based on RTFX=20x at c=256)
 - **GPUs needed:** `5,000 / 200 = 25 ASR GPUs`
 - **VRAM efficiency:** Only using 15/80 GB — could run 4-5 ASR instances per GPU
-- **Optimized:** `25 / 4 = ~7 physical H100s` with multi-instance
+- **With MIG (3g.40gb x 2):** Each instance delivers 45 req/s offline (aggregate 90.9 req/s). MIG doubles throughput per physical GPU while maintaining identical per-request latency.
+- **Optimized:** `25 / 2 = ~13 physical H100s` with MIG (2 instances per GPU)
 
 ### TTS Capacity (MagpieTTS bs64)
 
@@ -229,7 +341,7 @@ ASR (Parakeet CTC) does **not** have this issue — its acoustic model supports 
 
 ---
 
-## 8. Benchmark Commands
+## 9. Benchmark Commands
 
 ### ASR
 
@@ -280,11 +392,48 @@ python3 run_tts_bench.py \
 
 ---
 
-## 9. Raw Results
+### MIG Benchmark
+
+```bash
+# Offline mode — 2 instances on 3g.40gb MIG slices
+python3 run_mig_bench.py \
+  --mig-profile 3g.40gb \
+  --mode offline \
+  --concurrency 1,4,8,16 \
+  --requests 30 \
+  --yes
+
+# Streaming mode
+python3 run_mig_bench.py \
+  --mig-profile 3g.40gb \
+  --mode streaming \
+  --concurrency 1,4,8,16 \
+  --requests 30 \
+  --yes
+
+# Dry run (preview plan without executing)
+python3 run_mig_bench.py --mig-profile 2g.20gb --dry-run
+```
+
+### ASR Non-MIG Offline
+
+```bash
+python3 run_bench.py asr \
+  --mode offline \
+  --concurrency 1,4,8,16 \
+  --requests 30
+```
+
+---
+
+## 10. Raw Results
 
 All benchmark results (JSON + Markdown reports) are stored in the `results/` directory:
 
-- `results/asr_20260219_001827.md` — ASR Parakeet CTC streaming benchmark
+- `results/asr_20260219_001827.md` — ASR Parakeet CTC streaming benchmark (non-MIG)
+- `results/asr_20260220_230457.md` — ASR Parakeet CTC offline benchmark (non-MIG)
+- `results/mig_asr_3g_40gb_20260220_222942.md` — MIG ASR streaming benchmark (3g.40gb x 2)
+- `results/mig_asr_3g_40gb_20260220_224926.md` — MIG ASR offline benchmark (3g.40gb x 2)
 - `results/tts_20260219_030515.md` — TTS FastPitch-HifiGAN streaming benchmark
 - `results/tts_20260219_041704.md` — TTS MagpieTTS bs8 streaming benchmark
 - `results/tts_20260219_045528.md` — TTS MagpieTTS bs64 streaming benchmark
